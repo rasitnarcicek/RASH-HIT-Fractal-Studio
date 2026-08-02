@@ -3,11 +3,24 @@
 
 import json
 import csv
-import xml.etree.ElementTree as ET
+# Use defusedxml for safe XML parsing; fall back to stdlib with a warning.
+try:
+    import defusedxml.ElementTree as ET  # type: ignore[import]
+except ImportError:  # pragma: no cover
+    import warnings as _warnings
+    _warnings.warn(
+        "defusedxml not installed. Falling back to stdlib xml.etree.ElementTree. "
+        "Install defusedxml>=0.7.1 for XML attack protection.",
+        ImportWarning, stacklevel=2,
+    )
+    import xml.etree.ElementTree as ET  # type: ignore[assignment]
 import numpy as np
 from pathlib import Path
 from typing import Dict, Any, Tuple
 from PIL import Image
+
+# Upper bound on decoded image size, guarding against decompression bombs.
+MAX_IMAGE_PIXELS = 64_000_000
 
 
 def parse_ascii_file(ascii_path: Path, cols: int, rows: int) -> np.ndarray:
@@ -127,6 +140,13 @@ def parse_png_samples_file(png_path: Path, cols: int, rows: int) -> np.ndarray:
     if not png_path.exists():
         return np.zeros((rows, cols), dtype=int)
 
+    with Image.open(png_path) as probe:
+        px = probe.size[0] * probe.size[1]
+        if px > MAX_IMAGE_PIXELS:
+            raise ValueError(
+                f"Refusing to decode '{png_path}': {px} pixels exceeds the "
+                f"{MAX_IMAGE_PIXELS} pixel safety limit (possible decompression bomb)"
+            )
     img = Image.open(png_path).convert("RGB")
     w, h = img.size
     matrix = np.zeros((rows, cols), dtype=int)
