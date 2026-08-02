@@ -765,13 +765,17 @@ def generate_excel_workbook(
             ws_s = wb["Summary"]
             ws_s["B5"].value = model.generated_at
             ws_s["B14"].value = f"{model.total_time_ms:.2f} ms"
+        template_saved = False
         for attempt in range(5):
             try:
                 wb.save(excel_path)
+                template_saved = True
                 break
             except PermissionError:
                 time.sleep(0.5)
         wb.close()
+        if not template_saved:
+            raise PermissionError(f"Could not save Excel workbook to {excel_path} after 5 attempts (file is locked or permission denied).")
         return excel_path
 
     wb = openpyxl.Workbook()

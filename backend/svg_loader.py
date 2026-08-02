@@ -68,8 +68,15 @@ def parse_css_style_block(style_content: str) -> Dict[str, Dict[str, str]]:
                             rules[class_name].update(props)
             if rules:
                 return rules
-        except Exception:
-            pass  # Fall back to regex on any parsing failure
+        except Exception as e:
+            # tinycss2 failed unexpectedly; surface it as a warning and fall back
+            # to the regex parser instead of silently discarding the error.
+            import warnings as _warnings
+            _warnings.warn(
+                f"tinycss2 failed to parse CSS <style> block ({e!r}); "
+                "falling back to regex CSS parser.",
+                RuntimeWarning, stacklevel=2,
+            )
 
     # Fallback Regex CSS Parser
     clean_css = re.sub(r'/\*.*?\*/', '', style_content, flags=re.DOTALL)

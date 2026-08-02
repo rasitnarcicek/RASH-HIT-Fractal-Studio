@@ -44,8 +44,7 @@ def process_single_file(input_file: str, engine: str, measure_mode: str, levels:
         for node, style in elements:
             geoms.extend(extract_node_geometries(node, style))
     except Exception as e:
-        print(f"[ERROR] Failed to load or parse SVG file '{input_file}': {e}", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError(f"Failed to load or parse SVG file '{input_file}': {e}") from e
     t1_load = time.perf_counter()
     print(f"[+] Loaded {len(geoms)} geometries in {(t1_load - t0_load)*1000:.2f} ms")
 
@@ -154,8 +153,9 @@ def process_single_file(input_file: str, engine: str, measure_mode: str, levels:
         print(f"[OK] Export Completed! Package generated at:\n     {output_root / safe_stem}")
     except Exception as e:
         import traceback
-        print(f"[!] Export Warning: {e}")
-        traceback.print_exc()
+        print(f"[ERROR] Academic package export failed: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        raise
 
 def main():
     parser = argparse.ArgumentParser(description="RASH-HIT Fractal Studio - Vector Geometry Analysis & Box-Counting Engine")
@@ -185,7 +185,11 @@ def main():
 
     target_path = Path(target_input)
     if target_path.is_file():
-        process_single_file(str(target_path), args.engine, args.measure, args.levels, args.profile, output_root, args.export_high_level_tables)
+        try:
+            process_single_file(str(target_path), args.engine, args.measure, args.levels, args.profile, output_root, args.export_high_level_tables)
+        except Exception as e:
+            print(f"[ERROR] Analysis failed for '{target_path.name}': {e}", file=sys.stderr)
+            sys.exit(1)
     elif target_path.is_dir():
         svg_files = sorted(list(target_path.glob("*.svg")))
         if not svg_files:
@@ -195,9 +199,17 @@ def main():
         print("============================================================")
         print(f"BATCH PROCESSING MODE: {len(svg_files)} SVG Files Found")
         print("============================================================")
+        failed: List[str] = []
         for idx, svg_f in enumerate(svg_files, start=1):
             print(f"\n>>> [{idx}/{len(svg_files)}] Processing: {svg_f.name}")
-            process_single_file(str(svg_f), args.engine, args.measure, args.levels, args.profile, output_root, args.export_high_level_tables)
+            try:
+                process_single_file(str(svg_f), args.engine, args.measure, args.levels, args.profile, output_root, args.export_high_level_tables)
+            except Exception as e:
+                print(f"[ERROR] Failed to process '{svg_f.name}': {e}", file=sys.stderr)
+                failed.append(svg_f.name)
+        if failed:
+            print(f"[ERROR] Batch completed with {len(failed)}/{len(svg_files)} failure(s): {', '.join(failed)}", file=sys.stderr)
+            sys.exit(1)
     else:
         print(f"[!] Error: Target path not found: {target_input}")
         sys.exit(1)
