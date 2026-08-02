@@ -130,6 +130,21 @@ def sample_quadratic_bezier(
     return pts
 
 
+def sample_ellipse_outline(
+    cx: float,
+    cy: float,
+    rx: float,
+    ry: float,
+    num_steps: int
+) -> List[Tuple[float, float]]:
+    """Samples a closed ellipse (or circle when rx == ry) outline at uniform angle steps."""
+    pts = []
+    for i in range(num_steps + 1):
+        ang = (i / num_steps) * 2 * math.pi
+        pts.append((cx + rx * math.cos(ang), cy + ry * math.sin(ang)))
+    return pts
+
+
 def sample_elliptical_arc(
     p0: Tuple[float, float],
     rx: float,
@@ -272,6 +287,10 @@ def parse_svg_path(d_str: str, tolerance_steps: int = 16) -> List[List[Tuple[flo
         is_rel = cmd.islower()
         c = cmd.upper()
 
+        def abs_pt(dx: float, dy: float) -> Tuple[float, float]:
+            """Resolves a command parameter pair against the relative/absolute mode."""
+            return (dx + (curr_x if is_rel else 0.0), dy + (curr_y if is_rel else 0.0))
+
         def get_args(count: int) -> List[float]:
             nonlocal idx
             if idx + count > num_tokens:
@@ -287,8 +306,7 @@ def parse_svg_path(d_str: str, tolerance_steps: int = 16) -> List[List[Tuple[flo
 
         if c == 'M':
             a = get_args(2)
-            x = a[0] + (curr_x if is_rel else 0.0)
-            y = a[1] + (curr_y if is_rel else 0.0)
+            x, y = abs_pt(a[0], a[1])
             curr_x, curr_y = x, y
             start_x, start_y = x, y
 
@@ -299,8 +317,7 @@ def parse_svg_path(d_str: str, tolerance_steps: int = 16) -> List[List[Tuple[flo
 
         elif c == 'L':
             a = get_args(2)
-            x = a[0] + (curr_x if is_rel else 0.0)
-            y = a[1] + (curr_y if is_rel else 0.0)
+            x, y = abs_pt(a[0], a[1])
             curr_x, curr_y = x, y
             current_path.append((curr_x, curr_y))
 
@@ -318,12 +335,9 @@ def parse_svg_path(d_str: str, tolerance_steps: int = 16) -> List[List[Tuple[flo
 
         elif c == 'C':
             a = get_args(6)
-            x1 = a[0] + (curr_x if is_rel else 0.0)
-            y1 = a[1] + (curr_y if is_rel else 0.0)
-            x2 = a[2] + (curr_x if is_rel else 0.0)
-            y2 = a[3] + (curr_y if is_rel else 0.0)
-            x = a[4] + (curr_x if is_rel else 0.0)
-            y = a[5] + (curr_y if is_rel else 0.0)
+            x1, y1 = abs_pt(a[0], a[1])
+            x2, y2 = abs_pt(a[2], a[3])
+            x, y = abs_pt(a[4], a[5])
 
             pts = sample_cubic_bezier((curr_x, curr_y), (x1, y1), (x2, y2), (x, y), num_steps=tolerance_steps)
             current_path.extend(pts)
@@ -338,10 +352,8 @@ def parse_svg_path(d_str: str, tolerance_steps: int = 16) -> List[List[Tuple[flo
                 x1, y1 = curr_x, curr_y
 
             a = get_args(4)
-            x2 = a[0] + (curr_x if is_rel else 0.0)
-            y2 = a[1] + (curr_y if is_rel else 0.0)
-            x = a[2] + (curr_x if is_rel else 0.0)
-            y = a[3] + (curr_y if is_rel else 0.0)
+            x2, y2 = abs_pt(a[0], a[1])
+            x, y = abs_pt(a[2], a[3])
 
             pts = sample_cubic_bezier((curr_x, curr_y), (x1, y1), (x2, y2), (x, y), num_steps=tolerance_steps)
             current_path.extend(pts)
@@ -350,10 +362,8 @@ def parse_svg_path(d_str: str, tolerance_steps: int = 16) -> List[List[Tuple[flo
 
         elif c == 'Q':
             a = get_args(4)
-            x1 = a[0] + (curr_x if is_rel else 0.0)
-            y1 = a[1] + (curr_y if is_rel else 0.0)
-            x = a[2] + (curr_x if is_rel else 0.0)
-            y = a[3] + (curr_y if is_rel else 0.0)
+            x1, y1 = abs_pt(a[0], a[1])
+            x, y = abs_pt(a[2], a[3])
 
             pts = sample_quadratic_bezier((curr_x, curr_y), (x1, y1), (x, y), num_steps=tolerance_steps)
             current_path.extend(pts)
@@ -368,8 +378,7 @@ def parse_svg_path(d_str: str, tolerance_steps: int = 16) -> List[List[Tuple[flo
                 x1, y1 = curr_x, curr_y
 
             a = get_args(2)
-            x = a[0] + (curr_x if is_rel else 0.0)
-            y = a[1] + (curr_y if is_rel else 0.0)
+            x, y = abs_pt(a[0], a[1])
 
             pts = sample_quadratic_bezier((curr_x, curr_y), (x1, y1), (x, y), num_steps=tolerance_steps)
             current_path.extend(pts)
@@ -381,8 +390,7 @@ def parse_svg_path(d_str: str, tolerance_steps: int = 16) -> List[List[Tuple[flo
             rx, ry, phi = a[0], a[1], a[2]
             large_arc = bool(a[3])
             sweep = bool(a[4])
-            x = a[5] + (curr_x if is_rel else 0.0)
-            y = a[6] + (curr_y if is_rel else 0.0)
+            x, y = abs_pt(a[5], a[6])
 
             pts = sample_elliptical_arc((curr_x, curr_y), rx, ry, phi, large_arc, sweep, (x, y), num_steps=tolerance_steps)
             current_path.extend(pts)
@@ -461,11 +469,7 @@ def extract_node_geometries(
         cy = float(attr.get('cy', 0))
         r = float(attr.get('r', 0))
         if r > 0:
-            pts = []
-            for i in range(num_steps + 1):
-                ang = (i / num_steps) * 2 * math.pi
-                pts.append((cx + r * math.cos(ang), cy + r * math.sin(ang)))
-            subpaths = [pts]
+            subpaths = [sample_ellipse_outline(cx, cy, r, r, num_steps)]
 
     elif tag == 'ellipse':
         cx = float(attr.get('cx', 0))
@@ -473,11 +477,7 @@ def extract_node_geometries(
         rx = float(attr.get('rx', 0))
         ry = float(attr.get('ry', 0))
         if rx > 0 and ry > 0:
-            pts = []
-            for i in range(num_steps + 1):
-                ang = (i / num_steps) * 2 * math.pi
-                pts.append((cx + rx * math.cos(ang), cy + ry * math.sin(ang)))
-            subpaths = [pts]
+            subpaths = [sample_ellipse_outline(cx, cy, rx, ry, num_steps)]
 
     elif tag == 'line':
         x1 = float(attr.get('x1', 0))

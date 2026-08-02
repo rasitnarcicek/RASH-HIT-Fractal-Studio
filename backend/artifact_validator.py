@@ -9,6 +9,21 @@ from pathlib import Path
 from typing import Dict, Any, Tuple
 from PIL import Image
 
+from backend.grid_cells import level_tag
+
+
+FILLED_CHARS = ("■", "1", "#", "X")
+
+
+def _write_bit_row(matrix: np.ndarray, row_idx: int, chars: str, cols: int, rows: int) -> bool:
+    """Writes one occupancy row into ``matrix``; returns True when the row was consumed."""
+    if len(chars) != cols or row_idx >= rows:
+        return False
+    for c_idx, ch in enumerate(chars):
+        if ch in FILLED_CHARS:
+            matrix[row_idx, c_idx] = 1
+    return True
+
 
 def parse_ascii_file(ascii_path: Path, cols: int, rows: int) -> np.ndarray:
     lines = ascii_path.read_text(encoding="utf-8").splitlines()
@@ -17,13 +32,8 @@ def parse_ascii_file(ascii_path: Path, cols: int, rows: int) -> np.ndarray:
     for line in lines:
         if "|" in line:
             parts = line.split("|")
-            if len(parts) >= 2:
-                chars = parts[1].strip()
-                if len(chars) == cols and row_idx < rows:
-                    for c_idx, ch in enumerate(chars):
-                        if ch in ("■", "1", "#", "X"):
-                            matrix[row_idx, c_idx] = 1
-                    row_idx += 1
+            if len(parts) >= 2 and _write_bit_row(matrix, row_idx, parts[1].strip(), cols, rows):
+                row_idx += 1
     return matrix
 
 
@@ -34,19 +44,10 @@ def parse_mask_file(mask_path: Path, cols: int, rows: int) -> np.ndarray:
     for line in lines:
         if "|" in line:
             parts = line.split("|")
-            if len(parts) >= 2:
-                bits = parts[1].replace(" ", "").strip()
-                if len(bits) == cols and row_idx < rows:
-                    for c_idx, b in enumerate(bits):
-                        if b in ("1", "■", "#", "X"):
-                            matrix[row_idx, c_idx] = 1
-                    row_idx += 1
+            if len(parts) >= 2 and _write_bit_row(matrix, row_idx, parts[1].replace(" ", "").strip(), cols, rows):
+                row_idx += 1
         elif "=" in line and line.startswith("Y"):
-            bits = line.split("=", 1)[1].strip()
-            if len(bits) == cols and row_idx < rows:
-                for c_idx, b in enumerate(bits):
-                    if b in ("1", "■", "#", "X"):
-                        matrix[row_idx, c_idx] = 1
+            if _write_bit_row(matrix, row_idx, line.split("=", 1)[1].strip(), cols, rows):
                 row_idx += 1
     return matrix
 
@@ -172,26 +173,20 @@ def validate_and_generate_real_diff_reports(
     grid_str = lvl_info.get("grid") or f"{lvl_info.get('cols')}x{lvl_info.get('rows')}"
     cols = lvl_info.get("cols", 0)
     rows = lvl_info.get("rows", 0)
-    lvl_fmt = f"{level_idx:02d}"
+    lvl_fmt = level_tag(level_idx)
 
-    ascii_path = out_dir / "ascii" / f"{lvl_fmt}_{grid_str}_ascii.txt"
-    if not ascii_path.exists():
-        ascii_path = out_dir / "ascii" / f"{safe_name}_l{lvl_fmt}_{grid_str}_ascii.txt"
+    def artifact(subdir: str, suffix: str) -> Path:
+        """Current artifact path, falling back to the legacy ``<motif>_lXX_`` naming."""
+        current = out_dir / subdir / f"{lvl_fmt}_{grid_str}_{suffix}"
+        if current.exists():
+            return current
+        return out_dir / subdir / f"{safe_name}_l{lvl_fmt}_{grid_str}_{suffix}"
 
-    mask_path = out_dir / "data" / f"{lvl_fmt}_{grid_str}_mask.txt"
-    if not mask_path.exists():
-        mask_path = out_dir / "data" / f"{safe_name}_l{lvl_fmt}_{grid_str}_mask.txt"
-
-    rle_path = out_dir / "data" / f"{lvl_fmt}_{grid_str}_rle.json"
-    if not rle_path.exists():
-        rle_path = out_dir / "data" / f"{safe_name}_l{lvl_fmt}_{grid_str}_rle.json"
-
-    card_svg = out_dir / "figures" / f"{lvl_fmt}_{grid_str}_card.svg"
-    map_svg = out_dir / "figures" / f"{lvl_fmt}_{grid_str}_map.svg"
-    if not card_svg.exists():
-        card_svg = out_dir / "figures" / f"{safe_name}_l{lvl_fmt}_{grid_str}_card.svg"
-    if not map_svg.exists():
-        map_svg = out_dir / "figures" / f"{safe_name}_l{lvl_fmt}_{grid_str}_map.svg"
+    ascii_path = artifact("ascii", "ascii.txt")
+    mask_path = artifact("data", "mask.txt")
+    rle_path = artifact("data", "rle.json")
+    card_svg = artifact("figures", "card.svg")
+    map_svg = artifact("figures", "map.svg")
 
     svg_path = map_svg if map_svg.exists() else card_svg
 
